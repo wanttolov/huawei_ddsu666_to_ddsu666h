@@ -1,0 +1,7 @@
+hw/s2kMeterTransposer.b\#1
+__pycache__/
+*.pyc
+*.log
+.vscode/
+.idea/
+Thumbs.db
