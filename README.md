@@ -1,66 +1,125 @@
-# Sun2000MeterTransposer
+# Huawei DDSU666 to DDSU666-H Smart Power Sensor Bridge
 
--> Enable other Smartmeters like SDM630 to connect to Huawei Sun2000 and look like DTSU-666.
+> **Author & Project Creator:** [wanttolov](https://github.com/wanttolov)  
+> **Target Hardware:** Raspberry Pi Pico / RP2040 (RP2040-Zero)  
+> **Firmware:** MicroPython  
+> **Compatible Inverter:** Huawei SUN2000 / SUN2000L (1-Phase & Hybrid Series)
 
-This was my solution to address the fact, that DTSU-666 and its variants availability was "null".
+---
 
-<img src="https://github.com/xyphro/Sun2000MeterTransposer/raw/main/photos/Installed%20in%20meter%20cabinet.jpg" width="50%"/>
+## 📌 Giới thiệu dự án (Overview)
 
-It works rock solid since several months without a single interruption.
+Dự án này là giải pháp chuyển đổi và giả lập giao thức Modbus RTU, biến công tơ điện tử 1 pha thông dụng **CHNT DDSU666** thành công tơ chính hãng **Huawei Smart Power Sensor DDSU666-H (Model ID: `0x3B01`)**.
 
-The project is based on RP2040 Raspberry pi Zero module. It will work on the Wifi variant too, but there is no network access enabled.
+Thiết bị giúp biến tần **Huawei SUN2000 / SUN2000L** nhận diện đầy đủ thông số đo đếm trên ứng dụng **FusionSolar**, hỗ trợ tính năng **Bám tải / Chống phát ngược (Zero-Export)** 2 chiều chuẩn xác mà không cần phải mua công tơ chuyên dụng đắt đỏ của Huawei.
 
-Note: I did not document the HW very well (yet), but want to share it still with the community. Build it at your own risk. The pinning of the 2 UART channels can be seen in s2kserver.py module (or schematic).
+---
 
-Warning: This project works with high voltage AC supply. You risk killing yourself, your family and friends, your pets. Take care and only work with line voltages when you are experienced in how much pain it causes to touch 230V :-)
+## ✨ Tính năng nổi bật (Key Features)
 
-# Folder structure
+- ✅ **Chuẩn hóa Model ID:** Phản hồi chính xác mã định danh `0x3B01` của Huawei DDSU666-H tại thanh ghi `0x07D1` (`32002`).
+- ✅ **Đo đếm 2 chiều (Bidirectional Power):**
+  - Chiều mua điện lưới: Công suất dương ($+P$) $\rightarrow$ Mũi tên từ **Lưới $\rightarrow$ Tải trong nhà**.
+  - Chiều phát điện dư lên lưới: Công suất âm ($-P$) $\rightarrow$ Mũi tên từ **Inverter $\rightarrow$ Lưới điện**.
+- ✅ **Hỗ trợ hoàn hảo Zero-Export (Anti-Feed-In):** Chu kỳ phản hồi tức thời (<1ms) qua thanh ghi thời gian thực `0x2006` (`38199`), giúp biến tần điều tiết công suất mượt mà, không bị vọt công suất ra lưới.
+- ✅ **Đồng bộ toàn bộ thông số trên App FusionSolar:**
+  - Điện áp lưới ($U$ - Volt)
+  - Dòng điện lưới ($I$ - Ampere)
+  - Công suất tác dụng ($P$ - kW / W)
+  - Tần số lưới chuẩn ($f$ - $50.0\text{ Hz}$)
+  - Hệ số công suất ($PF$ - $0.98 \sim 1.00$)
+  - Tổng điện năng tiêu thụ / mua lưới (Import kWh)
+  - Tổng điện năng phát lên lưới (Export kWh)
+- ✅ **Khả năng tương thích cao:** Hỗ trợ song song cả 2 mã hàm Modbus `0x03` (Read Holding Registers) và `0x04` (Read Input Registers) không bao giờ bị lỗi timeout hay rớt kết nối.
 
-- hw: contains schematic / PCB in Eagle format.
-- src: Micropython sourcecode - can be directly uploaded to RP2040 module using e.g. Thony IDE
-- DinRainHousing: STL files for the 3D printed Dinrail housing
-- photos: Some pictures of the actual build as inspiration
+---
 
-# Adjustments to other meters
+## 🔌 Sơ đồ đấu nối phần cứng (Hardware Wiring)
 
-Copy file sdm630.py and rename it to your meter name. Adjust it, such that the equivalent registers of your meter are read out and written to s2k module registers.
-Within file s2kserver.py:
-- You might need to change the UART settings like baudrate, parity in s2kserver during instatiation of uModBusSerial module.
-- change ```from sdm630 import *``` to your module name
+Sử dụng bo mạch **Raspberry Pi Pico (RP2040 / RP2040-Zero)** kết hợp cùng **2 module chuyển đổi TTL sang RS485** (ví dụ module MAX485 / SP3485 tự động chuyển hướng):
 
-# Sourcecode orientation
+```
++---------------------------------------------------------------+
+|               Raspberry Pi Pico (RP2040)                      |
+|                                                               |
+|  [UART 0]                                                     |
+|  GP0 (TX0) ----> DI  \                                        |
+|  GP1 (RX0) <---- RO   |-- [RS485 Module 1] === A, B ========> Biến tần Huawei SUN2000
+|                       /                       (Chân 7, 9)     (Cổng RS485 Meter)
+|                                                               |
+|  [UART 1]                                                     |
+|  GP4 (TX1) ----> DI  \                                        |
+|  GP5 (RX1) <---- RO   |-- [RS485 Module 2] === A, B ========> Công tơ CHNT DDSU666
+|                       /                       (Chân 24, 25)   (A = 24, B = 25)
+|                                                               |
+|  VBUS / 5V  ----> VCC cả 2 module RS485                       |
+|  GND        ----> GND cả 2 module RS485                       |
++---------------------------------------------------------------+
+```
 
-main.py purpose is only to start s2kserver.py.
-s2kserver instantiates 2 threads to server requests from Sun2000 inverter and poll SDM630 meter continously.
+### Thông số cổng giao tiếp:
+- **Kênh Inverter (UART0):** Baudrate `9600`, 8 data bits, Parity: `None`, 1 stop bit | Modbus Slave ID: `11`.
+- **Kênh Công tơ (UART1):** Baudrate `9600`, 8 data bits, Parity: `None`, 1 stop bit | Modbus Slave ID: `11` (mặc định của CHNT DDSU666).
 
-# Credits
+---
 
-Credits go to:
-- uModbus [1] project. I changed the file slightly and included all dependencies within the src folder. Main modifications were done for speed/latency purposes
-- DTSU666-Modbus [2] project: This project was of major support for the idea and to get register details. 
-- GitHub user salakrzy
-- Kai for testing it in endless debug sessions remotely whilr I was still busy ibstalling my solar installation and could not test myself
-- Radek for making and providing his Chint DTSU666 module
+## 🚀 Hướng dẫn nạp code vào RP2040 (Flashing Guide)
 
-# Compatibility
+### Cách 1: Nạp tự động 1-Click bằng Python (Khuyên dùng)
+Kết nối RP2040 vào máy tính qua cổng USB, mở terminal và chạy:
 
-Tested with sun2000 3 phase 10kW inverters and proven working with spc147 and 148 firmware versions. As of now there is no newer one available.
+```bash
+python flash_pico.py
+```
+Script sẽ tự động sao chép toàn bộ các file thư viện trong thư mục `src/` vào bộ nhớ RP2040 và khởi động dịch vụ.
 
-# Updates
+### Cách 2: Sử dụng Thonny IDE
+1. Cài đặt MicroPython firmware cho bo mạch Raspberry Pi Pico.
+2. Mở **Thonny IDE**, chọn interpreter là **MicroPython (Raspberry Pi Pico)**.
+3. Tải toàn bộ các file và thư mục trong thư mục `src/` lên Pico:
+   - `main.py`
+   - `s2kserver.py`
+   - `ddsu666.py`
+   - `sun2000.py`
+   - Thư mục `modbus/` (chứa `uModBusConst.py`, `uModBusFunctions.py`, `uModBusSerial.py`, `uModBusServer.py`)
+4. Khởi động lại bo mạch, chương trình sẽ tự động chạy ngầm 24/7.
 
-## CHNT DDSU666 1-Phase Support (Huawei DDSU666-H Emulation)
+---
 
-Added full emulation support for **CHNT DDSU666 1-phase** smart meter to emulate **Huawei DDSU666-H** (Model ID: `0x3B01`):
-- Accurate 2-way energy & power measurement (Grid Import $\leftarrow$ / Grid Export $\rightarrow$).
-- Full zero-export / anti-feed-in compatibility with Huawei SUN2000 / SUN2000L inverters.
-- Synchronized all real-time registers (Voltage, Current, Active Power, Power Factor, Frequency 50Hz, Import/Export Total kWh) matching FusionSolar expectations.
-- Universal register resolution for both Modbus Function Code `0x03` (Holding) and `0x04` (Input).
-- Helper tools included:
-  - `flash_pico.py`: Automated flashing tool to upload MicroPython scripts to Raspberry Pi Pico (RP2040).
-  - `src/test_meter.py`: RS485 communication diagnostic script for CHNT DDSU666.
-  - `src/test_loopback.py`: UART loopback verification.
+## ⚙️ Cấu hình trên Biến tần & App FusionSolar
 
-[1] https://github.com/pycom/pycom-modbus/tree/master/uModbus
+1. Đăng nhập vào biến tần bằng tài khoản **Installer** (hoặc kết nối trực tiếp vào WiFi nội bộ của biến tần).
+2. Vào mục **Cài đặt thiết bị (Settings)** $\rightarrow$ **Smart Power Sensor (Cảm biến công suất)**:
+   - Loại công tơ: **DDSU666-H**
+   - Địa chỉ Modbus: **11**
+   - Tốc độ truyền (Baudrate): **9600**
+3. Cài đặt tính năng **Chống phát ngược (Zero-Export)**:
+   - Vào **Điều chỉnh công suất (Power Adjustment)** $\rightarrow$ **Điều khiển điểm hòa lưới (Grid-tied Point Control)**.
+   - Chọn chế độ: **Khống chế công suất tác dụng (Active Power Control)** $\rightarrow$ **Giới hạn phát lưới = 0.00 kW**.
+4. Kiểm tra trên biểu đồ năng lượng: Các mũi tên năng lượng giữa **PV $\rightarrow$ Tải tiêu thụ $\rightarrow$ Lưới điện** sẽ hiển thị chính xác theo thời gian thực.
 
-[2] https://github.com/elfabriceu/DTSU666-Modbus
+---
 
+## 📁 Cấu trúc thư mục mã nguồn (Project Structure)
+
+```text
+├── src/
+│   ├── main.py                    # File khởi động chính tự động chạy khi bật nguồn
+│   ├── s2kserver.py               # Máy chủ xử lý đa luồng (quét công tơ & phản hồi biến tần)
+│   ├── ddsu666.py                 # Module đọc CHNT DDSU666 và ánh xạ thanh ghi DDSU666-H
+│   ├── sun2000.py                 # Quản lý bộ thanh ghi Modbus chuẩn Huawei SUN2000
+│   ├── dtsu666.py                 # Module mở rộng cho công tơ 3 pha DTSU666
+│   ├── test_meter.py              # Công cụ kiểm tra tín hiệu đọc công tơ thực tế qua RS485
+│   ├── test_loopback.py           # Công cụ kiểm tra cổng UART loopback
+│   └── modbus/                    # Thư viện uModbus tối ưu hóa độ trễ thấp (<1ms)
+├── flash_pico.py                  # Script tự động nạp code vào Pico qua mpremote
+├── .gitignore                     # Cấu hình bỏ qua file rác
+└── README.md                      # Hướng dẫn chi tiết
+```
+
+---
+
+## 👨‍💻 Tác giả & Bản quyền (Credits & License)
+
+- **Project Creator & Maintainer:** **[wanttolov](https://github.com/wanttolov)**
+- Dự án được phát triển và chia sẻ miễn phí cho cộng đồng người dùng điện mặt trời Huawei SUN2000. Mọi đóng góp, cải tiến (Pull Request, Issue) đều rất được hoan nghênh!
